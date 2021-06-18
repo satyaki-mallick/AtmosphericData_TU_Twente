@@ -1,0 +1,57 @@
+############################################
+## Example script to read KNMI Radar data ##
+######### by Mekonen Iticha #########
+############################################
+
+library(RNetCDF)		# for reading NetCDF files
+library(proj4)			# for coordinate transformation
+
+file <- "RAD_NL25_RAC_MFBS_EM_5min_202101190705.nc"
+
+## Step 1: read NetCDF data
+nc     <- open.nc(file)							# open connection to file
+seqy   <- var.get.nc(nc,"y")					# a sequence of 765 values
+seqx   <- var.get.nc(nc,"x")					# a sequence of 700 values
+t      <- var.get.nc(nc,"time")					# a single value
+image1 <- var.get.nc(nc,"image1_image_data")	# image1 is a matrix of 700x765
+close.nc(nc)									# close the connection to the file
+
+## Step 2: transform pixel values to rainfall rates
+## image1 calibration formula is: "GEO = 0.010000 * PV + 0.000000"
+## which means we must divide pixel values by 100 to get rainfall rates
+
+R <- image1/10		# rainfall rates in mm/h
+R <- as.vector(R)	# flattens the matrix into a vector
+
+## Step 3.1: create stereographic grid
+xy <- expand.grid(seqx,seqy)	# a matrix with 2 columns for x and y coordinates (in km)
+
+## Step 3.2 (optional) project from stereographic to lat/lon coordinates using the "proj4" library
+proj4string <- "+proj=stere +lat_0=90 +lon_0=0 +lat_ts=60 +a=6378.14 +b=6356.75 +x_0=0 y_0=0"	
+pj <- proj4::project(xy,proj4string,inverse=TRUE)
+latlon <- as.matrix(data.frame(lat=pj$y,lon=pj$x))	# a matrix with 2 columns for latitude and longitude
+
+## Step 4: choose an area to plot
+lat0 <- 50
+lat1 <- 54
+lon0 <- 2
+lon1 <- 8
+select <- which(latlon[,1]>=lat0 & latlon[,1]<=lat1 & latlon[,2]>=lon0 & latlon[,2]<=lon1)
+
+subR <- R[select]
+sub.xy <- xy[select,]
+sub.latlon <- latlon[select,]
+
+## Step 5: plot the selected area on a map
+## plot.Rmap(X=sub.xy[,1],Y=sub.xy[,2],Z=subR)
+## Note: this last part won't run on your computer because it uses a specific plotting routine that I wrote. 
+## so I need other ways to plot heatmaps. 
+
+## Step 6: extract data close to AWS:
+x.AWS <- mean(xy[,1])	# replace with the x coordinate of your weather station
+y.AWS <- mean(xy[,2])	# replace with the y coordinate of your weather station
+dist.to.AWS <- (xy[,1]-x.AWS)^2 + (xy[,2]-y.AWS)^2
+index <- which.min(dist.to.AWS)	 # returns the index of the radar pixel closest to the AWS.
+
+## note: I have AWS coordinates in lat/lon, then using spherical distance instead of Euclidean distance is more important. So need your help on this point as well
+## see "great circle distance" on wikipedia for more details.
